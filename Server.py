@@ -27,12 +27,12 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                     send_msg(sock_cli, "\nDeck saat ini:" +
                              "\nBatu: " + str(user.decklist[0]) +
                              "\nGunting: " + str(user.decklist[1]) +
-                             "\nKertas: " + str(user.decklist[2]))
+                             "\nKertas: " + str(user.decklist[2]), msg[0])
                 elif msg[0] == "Buat deck":
                     send_msg(sock_cli, "\nDeck saat ini:" +
                                        "\nBatu: " + str(user.decklist[0]) +
                                        "\nGunting: " + str(user.decklist[1]) +
-                                       "\nKertas: " + str(user.decklist[2]))
+                                       "\nKertas: " + str(user.decklist[2]), msg[0])
                     user.state = "DECKBUILDING"
                 elif msg[0] == "Buat room":
                     user.state = "ROOM"
@@ -41,8 +41,13 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                     for u in invitationlist[user]:
                         menu = menu + u + "\n"
                     menu = menu + "Kembali ke lobi\n"
-                    send_msg(sock_cli, menu)
+                    send_msg(sock_cli, menu, "Terima")
                     user.state = "ACCEPTING"
+
+            elif msg[0] == "bcast":
+                sendmsg = "<{}>: {}".format(user.username, msg[1])
+                send_bcast(clients, sendmsg, addr_cli, msg[0])
+
         elif user.state == "DECKBUILDING":
             msg = data.decode("utf-8").split()
             user.decklist = (int(msg[0]), int(msg[1]), int(msg[2]))
@@ -53,20 +58,20 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                 send_msg(sock_cli, "\nDeck saat ini:" +
                          "\nBatu: " + str(user.decklist[0]) +
                          "\nGunting: " + str(user.decklist[1]) +
-                         "\nKertas: " + str(user.decklist[2]))
+                         "\nKertas: " + str(user.decklist[2]), msg)
             elif msg.startswith("Undang "):
                 msg = msg.replace("Undang ", '')
                 print(msg)
                 if msg == user.username:
-                    send_msg(sock_cli, "Tidak bisa mengundang diri sendiri")
+                    send_msg(sock_cli, "Tidak bisa mengundang diri sendiri", "Undang")
                     continue
                 for u in userlist:
                     if msg == u.username:
-                        send_msg(sock_cli, msg + " berhasil diundang")
+                        send_msg(sock_cli, msg + " berhasil diundang", "Undang")
                         invitationlist[u].append(user.username)
                         break
                 else:
-                    send_msg(sock_cli, "Username tidak ditemukan")
+                    send_msg(sock_cli, "Username tidak ditemukan", "Undang")
             elif msg == "Kembali ke lobi":
                 for l in invitationlist.values():
                     if user.username in l:
@@ -79,29 +84,30 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
             else:
                 for u in userlist:
                     if msg == u.username:
-                        send_msg(sock_cli, "\nPermainan berhasil diterima")
+                        send_msg(sock_cli, "\nPermainan berhasil diterima", "Terima")
                         user.state = "ROOM"
                         break
                 else:
-                    send_msg(sock_cli, "\nUsername tidak ditemukan")
+                    send_msg(sock_cli, "\nUsername tidak ditemukan", "Terima")
                     menu = "\nPilih pemain:\n"
                     for u in invitationlist[user]:
                         menu = menu + u + "\n"
                     menu = menu + "Kembali ke lobi"
-                    send_msg(sock_cli, menu)
+                    send_msg(sock_cli, menu, "Pilih")
+        print(data)
     sock_cli.close()
     print("Connection closed", addr_cli)
     userlist.remove(user)
 
 
-def send_bcast(clients, data, sender_addr_cli):
+def send_bcast(clients, data, sender_addr_cli, option):
     for sock_cli, addr_cli, _ in clients.values():
         if not (sender_addr_cli[0] and sender_addr_cli[1] == addr_cli[1]):
-            send_msg(sock_cli, data)
+            send_msg(sock_cli, data, option)
 
 
-def send_msg(sock_cli, data):
-    sock_cli.send(bytes(data, "utf-8"))
+def send_msg(sock_cli, data, option):
+    sock_cli.send(bytes("{}|{}".format(data, option), "utf-8"))
 
 
 sock_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
