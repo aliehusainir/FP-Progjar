@@ -48,6 +48,31 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                 sendmsg = "<{}>: {}".format(user.username, msg[1])
                 send_bcast(clients, sendmsg, addr_cli, msg[0])
 
+            elif msg[0] == "add":
+                for u in userlist:
+                    #if msg[1] == u.username:
+                        #send_msg(sock_cli, msg[1] + " tidak ditemukan", msg[0])
+                    if msg[1] in friendlist[user]:
+                        send_msg(sock_cli, "Sudah berteman dengan " + msg[1], msg[0])
+                        break
+                    elif msg[1] == u.username:
+                        friendlist[user].append(u.username)
+                        friendlist[u].append(user.username)
+                        send_msg(sock_cli, msg[1] + " berhasil ditambahkan", msg[0])
+                        send_msg(clients[u][0], user.username + " telah menambahkanmu", msg[0])
+                        break
+                        
+            elif msg[0] == "chat":
+                sendmsg = "<{}>: {}".format(user.username, msg[2])
+                for u in userlist:
+                    if msg[1] in friendlist[user]:
+                        if msg[1] == u.username:
+                            send_msg(clients[u][0], sendmsg, msg[0])
+                            break
+                    else:
+                        send_msg(sock_cli, "User belum menjadi temanmu", msg[0])
+                        break
+
         elif user.state == "DECKBUILDING":
             msg = data.decode("utf-8").split()
             user.decklist = (int(msg[0]), int(msg[1]), int(msg[2]))
@@ -98,13 +123,15 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
     sock_cli.close()
     print("Connection closed", addr_cli)
     userlist.remove(user)
+    for username in friendlist:
+        if user in friendlist[username]:
+            friendlist[username].remove(user)
 
 
 def send_bcast(clients, data, sender_addr_cli, option):
     for sock_cli, addr_cli, _ in clients.values():
         if not (sender_addr_cli[0] and sender_addr_cli[1] == addr_cli[1]):
             send_msg(sock_cli, data, option)
-
 
 def send_msg(sock_cli, data, option):
     sock_cli.send(bytes("{}|{}".format(data, option), "utf-8"))
@@ -117,11 +144,13 @@ sock_server.listen(5)
 clients = {}
 userlist = []
 invitationlist = {}
+friendlist = {}
+
 
 while True:
     sock_cli, addr_cli = sock_server.accept()
     username_cli = sock_cli.recv(65535).decode("utf-8")
-    print(username_cli, " joined")
+    print(username_cli, "joined")
     user = User(username_cli, "LOBBY", (0, 0, 0))
     userlist.append(user)
 
@@ -130,3 +159,5 @@ while True:
 
     clients[user] = (sock_cli, addr_cli, thread_cli)
     invitationlist[user] = []
+    friendlist[user] = []
+
