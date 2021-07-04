@@ -5,11 +5,11 @@ import time
 
 
 def read_msg(sock_cli):
+    global userstate, isguest, hasguest
     while True:
         data, option = sock_cli.recv(65535).decode("utf-8").split("|")
         if len(data) == 0:
             break
-
         if option == "gambar":
             gambar = open(data, 'wb')
             while True:
@@ -17,7 +17,16 @@ def read_msg(sock_cli):
                 if not img:
                     break
                 gambar.write(img)
-
+        elif option == "TO_ROOM":
+            userstate = "ROOM"
+            isguest = True
+            print(data)
+        elif option == "GUEST_ENTERS":
+            hasguest = True
+            print(data)
+        elif option == "GUEST_LEAVES":
+            hasguest = False
+            print(data)
         else:
             print(data)
 
@@ -40,21 +49,23 @@ thread_cli.start()
 
 userstate = "LOBBY"
 hasdeck = False
+isguest = False
+hasguest = False
 
 try:
     while True:
         if userstate == "LOBBY":
             option = input("\nApa yang ingin anda lakukan?\n"
-                            "Lihat deck\n"
-                            "Buat deck\n"
-                            "Tambah teman\n"
-                            "Kirim pesan privat\n"
-                            "Kirim pesan broadcast\n"
-                            "Kirim gambar\n"
-                            "Buat room\n"
-                            "Terima undangan\n"
-                            "Keluar\n"
-                            ">> ")
+                           "Lihat deck\n"
+                           "Buat deck\n"
+                           "Tambah teman\n"
+                           "Kirim pesan privat\n"
+                           "Kirim pesan broadcast\n"
+                           "Kirim gambar\n"
+                           "Buat room\n"
+                           "Terima undangan\n"
+                           "Keluar\n"
+                           ">> ")
             if option == "Keluar":
                 sock_cli.close()
                 break
@@ -65,30 +76,24 @@ try:
                 sock_cli.send(bytes(option, "utf-8"))
                 userstate = "DECKBUILDING"
                 time.sleep(1)
-
             elif option == "Tambah teman":
                 username = input("Masukkan username yang ingin ditambahkan sebagai teman: ")
                 sock_cli.send(bytes("add|{}".format(username), "utf-8"))
-
             elif option == "Kirim pesan privat":
                 dest = input("Masukkan username tujuan: ")
                 msg = input("Masukkan pesan anda: ")
                 sock_cli.send(bytes("chat|{}|{}".format(dest, msg), "utf-8"))
-
             elif option == "Kirim pesan broadcast":
                 msg = input("Masukkan pesan anda: ")
                 sock_cli.send(bytes("bcast|{}".format(msg), "utf-8"))
-        
             elif option == "Kirim gambar":
                 dest = input("Masukkan username tujuan (ketikkan bcast untuk broadcast pesan): ")
                 msg = input("Masukkan lokasi gambar yang akan dikirim: ")
                 sock_cli.send(bytes("gambar|{}|{}".format(dest, msg), "utf-8"))
-            
             elif option == "Buat room":
                 if hasdeck:
                     sock_cli.send(bytes(option, "utf-8"))
                     userstate = "ROOM"
-                    time.sleep(1)
                 else:
                     print("Silakan buat deck terlebih dahulu")
             elif option == "Terima undangan":
@@ -100,11 +105,10 @@ try:
                     print("Silakan buat deck terlebih dahulu")
             else: 
                 print("Perintah yang anda masukkan tidak dikenali")
-
         elif userstate == "DECKBUILDING":
             option = input("\nMasukkan 3 angka yang merupakan jumlah kartu "
-                        "Batu, Gunting, dan Kertas yang kamu inginkan:\n"
-                        ">> ")
+                           "Batu, Gunting, dan Kertas yang kamu inginkan:\n"
+                           ">> ")
             newdeck = option.split()
             if len(newdeck) != 3:
                 continue
@@ -118,31 +122,62 @@ try:
                     hasdeck = True
                     time.sleep(1)
         elif userstate == "ROOM":
-            option = input("\nApa yang ingin anda lakukan?\n"
-                        "Lihat deck\n"
-                        "Undang pemain\n"
-                        "Mulai permainan\n"
-                        "Kembali ke lobi\n"
-                        ">> ")
+            if not isguest:
+                option = input("\nApa yang ingin anda lakukan?\n"
+                               "Lihat deck\n"
+                               "Undang pemain\n"
+                               "Mulai permainan\n"
+                               "Kembali ke lobi\n"
+                               ">> ")
+            else:
+                option = input("\nApa yang ingin anda lakukan?\n"
+                               "Lihat deck\n"
+                               "Siap bermain\n"
+                               "Kembali ke lobi\n"
+                               ">> ")
             if option == "Lihat deck":
                 sock_cli.send(bytes(option, "utf-8"))
                 time.sleep(1)
             elif option == "Undang pemain":
-                dest = input("\nMasukkan username yang ingin diundang ke room: \n"
-                            ">> ")
-                sock_cli.send(bytes("Undang " + dest, "utf-8"))
-                time.sleep(1)
+                if hasguest:
+                    print("Sudah ada pemain lain di dalam room")
+                else:
+                    dest = input("\nMasukkan username yang ingin diundang ke room: \n"
+                                 ">> ")
+                    sock_cli.send(bytes("Undang " + dest, "utf-8"))
+                    time.sleep(1)
+            elif option == "Mulai permainan":
+                if not hasguest:
+                    print("Menunggu lawan memasuki room")
+                else:
+                    sock_cli.send(bytes(option, "utf-8"))
+                    userstate = "READY"
+            elif option == "Siap bermain":
+                sock_cli.send(bytes(option, "utf-8"))
+                userstate = "READY"
             elif option == "Kembali ke lobi":
                 sock_cli.send(bytes(option, "utf-8"))
                 userstate = "LOBBY"
+                isguest = False
+                hasguest = False
         elif userstate == "ACCEPTING":
-            option = input()
+            option = input(">> ")
             if option == "Kembali ke lobi":
                 sock_cli.send(bytes(option, "utf-8"))
                 userstate = "LOBBY"
             else:
                 sock_cli.send(bytes(option, "utf-8"))
                 time.sleep(1)
+        elif userstate == "READY":
+            if not (hasguest or isguest):
+                userstate = "ROOM"
+                continue
+            option = input("\nMenunggu lawan bersiap\n"
+                           "Batalkan\n"
+                           ">>")
+            if option == "Batalkan":
+                sock_cli.send(bytes(option, "utf-8"))
+                userstate = "ROOM"
 
 except KeyboardInterrupt:
     sock_cli.close()
