@@ -21,6 +21,10 @@ def read_msg(sock_cli):
             userstate = "ROOM"
             isguest = True
             print(data)
+        elif option == "TO_LOBBY":
+            userstate = "LOBBY"
+            isguest = False
+            print(data)
         elif option == "GUEST_ENTERS":
             hasguest = True
             print(data)
@@ -32,6 +36,9 @@ def read_msg(sock_cli):
             print(data)
         elif option == "INPUT_RECEIVED":
             hasinput = True
+            print(data)
+        elif option == "INPUT_RESET":
+            hasinput = False
             print(data)
         else:
             print(data)
@@ -197,15 +204,16 @@ try:
                 sock_cli.send(bytes(option, "utf-8"))
                 userstate = "ROOM"
         elif userstate == "GAME":
-            option = input(">> ")
             if hasinput:
                 time.sleep(1)
-            elif not option:
-                sock_cli.send(bytes("\n", "utf-8"))
-                time.sleep(1)
-            elif check_input(option):
-                sock_cli.send(bytes(option, "utf-8"))
-                time.sleep(1)
+            else:
+                option = input(">> ")
+                if not option:
+                    sock_cli.send(bytes("\n", "utf-8"))
+                    time.sleep(1)
+                elif check_input(option):
+                    sock_cli.send(bytes(option, "utf-8"))
+                    time.sleep(1)
 
 except KeyboardInterrupt:
     sock_cli.close()

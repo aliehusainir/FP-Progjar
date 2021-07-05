@@ -1,6 +1,7 @@
 import socket
 import threading
 import random
+import time
 
 
 class User:
@@ -34,6 +35,7 @@ class Game:
         self.p1score = 0
         self.p2score = 0
         self.state = "MULLIGAN"
+        self.round = 1
 
     def is_ready(self):
         if self.p1ready and self.p2ready:
@@ -70,12 +72,16 @@ class Game:
             random.shuffle(self.p2deck)
 
     def draw(self, player):
+        drawn = None
         if player == "p1":
             if self.p1deck:
-                self.p1hand.append(self.p1deck.pop())
+                drawn = self.p1deck.pop()
+                self.p1hand.append(drawn)
         elif player == "p2":
             if self.p1deck:
-                self.p2hand.append(self.p2deck.pop())
+                drawn = self.p2deck.pop()
+                self.p2hand.append(drawn)
+        return drawn
 
     def draw_n(self, player, amount):
         for n in range(amount):
@@ -95,15 +101,17 @@ class Game:
         discarded = []
         if player == "p1":
             for i in indices:
-                discarded.append(self.p1hand.pop(i))
+                discarded.append(self.p1hand.pop(i-1))
         elif player == "p2":
             for i in indices:
-                discarded.append(self.p2hand.pop(i))
+                discarded.append(self.p2hand.pop(i-1))
         return discarded
 
     def add_wildcard(self, player):
         if player == "p1":
             self.p1hand.append(Card("Wildcard"))
+        elif player == "p2":
+            self.p2hand.append(Card("Wildcard"))
 
     def play(self, player, index):
         if player == "p1":
@@ -147,6 +155,12 @@ class Game:
             elif self.p1played.get_cardtype() == "Kertas" and self.p2played.get_cardtype() == "Batu":
                 self.p1score += 1
                 return "p1"
+
+    def get_round(self):
+        return self.round
+
+    def advance_round(self):
+        self.round += 1
 
 
 def create_deck(player):
@@ -259,8 +273,8 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                             p1hand = create_hand(p1deck)
                             p2hand = create_hand(p2deck)
                             room.append(Game(p1hand, p2hand, p1deck, p2deck))
-                            p1msg = "\nPermainan dimulai\nTahap mulligan\nHand anda:\n"
-                            p2msg = "\nPermainan dimulai\nTahap mulligan\nHand anda:\n"
+                            p1msg = "\nPermainan dimulai\nFase mulligan\nHand anda:\n"
+                            p2msg = "\nPermainan dimulai\nFase mulligan\nHand anda:\n"
                             for x in range(5):
                                 p1msg = p1msg + str(x+1) + ". " + p1hand[x].get_cardtype() + "\n"
                                 p2msg = p2msg + str(x+1) + ". " + p2hand[x].get_cardtype() + "\n"
@@ -276,10 +290,13 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                 for li in invitationlist.values():
                     if user.username in li:
                         li.remove(user.username)
-                for room in roomlist.values:
+                for room in roomlist:
                     if room[0] == user:
+                        if len(room) > 1:
+                            send_msg(clients[room[1]][0], "Room dibubarkan oleh host", "TO_LOBBY")
+                            room[1].state = "LOBBY"
                         roomlist.remove(room)
-                    elif room[1] == user:
+                    elif len(room) > 1 and room[1] == user:
                         room.pop(1)
                         send_msg(clients[room[0]][0], user.username + " telah meninggalkan room", "GUEST_LEAVES")
                 user.state = "LOBBY"
@@ -330,16 +347,17 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                 if user in room:
                     game = room[2]
                     gamestate = game.get_state()
+                    player = None
                     if user == room[0]:
                         player = "p1"
-                    else:
+                    elif user == room[1]:
                         player = "p2"
                     hand = game.get_hand(player)
                     if msg:
                         invalidmsg = False
                         for n in msg:
                             if n > len(hand):
-                                send_msg(sock_cli, "\nJumlah kartu di tangan hanya " + str(len(hand)), msg)
+                                send_msg(sock_cli, "\nJumlah kartu di tangan hanya " + str(len(hand)), "Invalid")
                                 invalidmsg = True
                                 break
                         if invalidmsg:
@@ -351,7 +369,56 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                         for x in range(len(hand)):
                             msg = msg + str(x+1) + ". " + hand[x].get_cardtype() + "\n"
                         send_msg(sock_cli, msg, "INPUT_RECEIVED")
-                        break
+                        game.set_ready(player)
+                        if game.is_ready():
+                            time.sleep(0.5)
+                            p1 = room[0]
+                            p2 = room[1]
+                            p1hand = game.get_hand("p1")
+                            p2hand = game.get_hand("p2")
+                            gameround = game.get_round()
+                            p1draw = game.draw("p1")
+                            if p1draw is None:
+                                p1draw = Card("None")
+                            p2draw = game.draw("p2")
+                            if p2draw is None:
+                                p2draw = Card("None")
+                            p1msg = ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                     p1draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                            p2msg = ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                     p2draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                            for x in range(len(p1hand)):
+                                p1msg = p1msg + str(x + 1) + ". " + p1hand[x].get_cardtype() + "\n"
+                            for x in range(len(p2hand)):
+                                p2msg = p2msg + str(x + 1) + ". " + p2hand[x].get_cardtype() + "\n"
+                            send_msg(clients[p1][0], p1msg, "INPUT_RESET")
+                            send_msg(clients[p2][0], p2msg, "INPUT_RESET")
+                            game.set_state("WILDCARD")
+                        else:
+                            break
+                    if gamestate == "WILDCARD":
+                        if len(msg) == 2:
+                            if hand[msg[0]-1].get_cardtype() == hand[msg[1]-1].get_cardtype():
+                                discarded = game.discard(player, msg)
+                                game.add_wildcard(player)
+                                send_msg(sock_cli, "\nAnda membuang 2 " + discarded[0].get_cardtype() +
+                                         " dan mendapatkan 1 wildcard\n", "INPUT_RECEIVED")
+                                game.set_ready(player)
+                            else:
+                                send_msg(sock_cli, "\nBuang 2 kartu regular yang sama atau 1 wildcard\n", "Invalid")
+                        elif len(msg) == 1:
+                            if hand[msg[0]-1].get_cardtype() == "Wildcard":
+                                discarded = game.discard(player, msg)
+                                game.draw_n(player, 2)
+                                send_msg(sock_cli, "\nAnda membuang 1 " + discarded[0].get_cardtype() +
+                                         " dan mengambil 2 kartu dari deck\n", "INPUT_RECEIVED")
+                                game.set_ready(player)
+                            else:
+                                send_msg(sock_cli, "\nBuang 2 kartu regular yang sama atau 1 wildcard\n", "Invalid")
+                        elif len(msg) > 2:
+                            send_msg(sock_cli, "\nBuang 2 kartu regular yang sama atau 1 wildcard\n", "Invalid")
+                        else:
+                            send_msg(sock_cli, "\nAnda tidak melakukan apa-apa pada fase wildcard\n", "INPUT_RECEIVED")
         print(data)
     sock_cli.close()
     print("Connection closed", addr_cli)
