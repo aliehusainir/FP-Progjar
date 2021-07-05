@@ -5,7 +5,7 @@ import time
 
 
 def read_msg(sock_cli):
-    global userstate, isguest, hasguest
+    global userstate, isguest, hasguest, hasinput
     while True:
         data, option = sock_cli.recv(65535).decode("utf-8").split("|")
         if len(data) == 0:
@@ -27,6 +27,12 @@ def read_msg(sock_cli):
         elif option == "GUEST_LEAVES":
             hasguest = False
             print(data)
+        elif option == "TO_GAME":
+            userstate = "GAME"
+            print(data)
+        elif option == "INPUT_RECEIVED":
+            hasinput = True
+            print(data)
         else:
             print(data)
 
@@ -40,6 +46,16 @@ def check_int(string):
         return False
 
 
+def check_input(string):
+    string = string.split()
+    if len(string) != len(set(string)):
+        return False
+    for n in string:
+        if not check_int(n):
+            return False
+    return True
+
+
 sock_cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock_cli.connect(("127.0.0.1", 50000))
 sock_cli.send(bytes(sys.argv[1], "utf-8"))
@@ -51,6 +67,7 @@ userstate = "LOBBY"
 hasdeck = False
 isguest = False
 hasguest = False
+hasinput = False
 
 try:
     while True:
@@ -170,6 +187,7 @@ try:
                 time.sleep(1)
         elif userstate == "READY":
             if not (hasguest or isguest):
+                sock_cli.send(bytes("Batalkan", "utf-8"))
                 userstate = "ROOM"
                 continue
             option = input("\nMenunggu lawan bersiap\n"
@@ -178,6 +196,16 @@ try:
             if option == "Batalkan":
                 sock_cli.send(bytes(option, "utf-8"))
                 userstate = "ROOM"
+        elif userstate == "GAME":
+            option = input(">> ")
+            if hasinput:
+                time.sleep(1)
+            elif not option:
+                sock_cli.send(bytes("\n", "utf-8"))
+                time.sleep(1)
+            elif check_input(option):
+                sock_cli.send(bytes(option, "utf-8"))
+                time.sleep(1)
 
 except KeyboardInterrupt:
     sock_cli.close()

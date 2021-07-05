@@ -1,5 +1,6 @@
 import socket
 import threading
+import random
 
 
 class User:
@@ -32,6 +33,7 @@ class Game:
         self.p2played = None
         self.p1score = 0
         self.p2score = 0
+        self.state = "MULLIGAN"
 
     def is_ready(self):
         if self.p1ready and self.p2ready:
@@ -49,11 +51,23 @@ class Game:
         elif player == "p2":
             self.p2ready = True
 
+    def get_state(self):
+        return self.state
+
+    def set_state(self, newstate):
+        self.state = newstate
+
     def get_hand(self, player):
         if player == "p1":
             return self.p1hand
         elif player == "p2":
             return self.p2hand
+
+    def shuffle_deck(self, player):
+        if player == "p1":
+            random.shuffle(self.p1deck)
+        elif player == "p2":
+            random.shuffle(self.p2deck)
 
     def draw(self, player):
         if player == "p1":
@@ -65,7 +79,17 @@ class Game:
 
     def draw_n(self, player, amount):
         for n in range(amount):
-            draw(self, player)
+            self.draw(player)
+
+    def mulligan(self, player, indices):
+        if player == "p1":
+            for i in indices:
+                self.p1deck.append(self.p1hand.pop(i-1))
+        elif player == "p2":
+            for i in indices:
+                self.p2deck.append(self.p2hand.pop(i-1))
+        self.shuffle_deck(player)
+        self.draw_n(player, len(indices))
 
     def discard(self, player, indices):
         discarded = []
@@ -105,24 +129,43 @@ class Game:
         else:
             if self.p1played.get_cardtype() == self.p2played.get_cardtype():
                 return None
-            elif self.p1played.get_cardtype() == "Rock" and self.p2played.get_cardtype() == "Paper":
+            elif self.p1played.get_cardtype() == "Batu" and self.p2played.get_cardtype() == "Kertas":
                 self.p2score += 1
                 return "p2"
-            elif self.p1played.get_cardtype() == "Paper" and self.p2played.get_cardtype() == "Scissors":
+            elif self.p1played.get_cardtype() == "Kertas" and self.p2played.get_cardtype() == "Gunting":
                 self.p2score += 1
                 return "p2"
-            elif self.p1played.get_cardtype() == "Scissors" and self.p2played.get_cardtype() == "Rock":
+            elif self.p1played.get_cardtype() == "Gunting" and self.p2played.get_cardtype() == "Batu":
                 self.p2score += 1
                 return "p2"
-            elif self.p1played.get_cardtype() == "Rock" and self.p2played.get_cardtype() == "Scissors":
+            elif self.p1played.get_cardtype() == "Batu" and self.p2played.get_cardtype() == "Gunting":
                 self.p1score += 1
                 return "p1"
-            elif self.p1played.get_cardtype() == "Scissors" and self.p2played.get_cardtype() == "Paper":
+            elif self.p1played.get_cardtype() == "Gunting" and self.p2played.get_cardtype() == "Kertas":
                 self.p1score += 1
                 return "p1"
-            elif self.p1played.get_cardtype() == "Paper" and self.p2played.get_cardtype() == "Rock":
+            elif self.p1played.get_cardtype() == "Kertas" and self.p2played.get_cardtype() == "Batu":
                 self.p1score += 1
                 return "p1"
+
+
+def create_deck(player):
+    deck = []
+    for x in range(int(player.decklist[0])):
+        deck.append(Card("Batu"))
+    for x in range(int(player.decklist[1])):
+        deck.append(Card("Gunting"))
+    for x in range(int(player.decklist[2])):
+        deck.append(Card("Kertas"))
+    random.shuffle(deck)
+    return deck
+
+
+def create_hand(deck):
+    hand = []
+    for n in range(5):
+        hand.append(deck.pop())
+    return hand
 
 
 def read_msg(clients, sock_cli, addr_cli, user, userlist):
@@ -204,6 +247,31 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                         break
                 else:
                     send_msg(sock_cli, "Username tidak ditemukan", "Undang")
+            elif msg == "Mulai permainan" or msg == "Siap bermain":
+                user.state = "READY"
+                for room in roomlist:
+                    if user in room:
+                        p1 = room[0]
+                        p2 = room[1]
+                        if p1.state == p2.state:
+                            p1deck = create_deck(p1)
+                            p2deck = create_deck(p2)
+                            p1hand = create_hand(p1deck)
+                            p2hand = create_hand(p2deck)
+                            room.append(Game(p1hand, p2hand, p1deck, p2deck))
+                            p1msg = "\nPermainan dimulai\nTahap mulligan\nHand anda:\n"
+                            p2msg = "\nPermainan dimulai\nTahap mulligan\nHand anda:\n"
+                            for x in range(5):
+                                p1msg = p1msg + str(x+1) + ". " + p1hand[x].get_cardtype() + "\n"
+                                p2msg = p2msg + str(x+1) + ". " + p2hand[x].get_cardtype() + "\n"
+                                if x == 4:
+                                    p1msg = p1msg + "Pilih kartu yang ingin anda kembalikan (tekan enter untuk skip)"
+                                    p2msg = p2msg + "Pilih kartu yang ingin anda kembalikan (tekan enter untuk skip)"
+                            send_msg(clients[p1][0], p1msg, "TO_GAME")
+                            send_msg(clients[p2][0], p2msg, "TO_GAME")
+                            p1.state = "GAME"
+                            p2.state = "GAME"
+                            break
             elif msg == "Kembali ke lobi":
                 for li in invitationlist.values():
                     if user.username in li:
@@ -249,6 +317,41 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                         menu = menu + u + "\n"
                     menu = menu + "Kembali ke lobi"
                     send_msg(sock_cli, menu, "Pilih")
+        elif user.state == "READY":
+            msg = data.decode()
+            if msg == "Batalkan":
+                user.state = "ROOM"
+        elif user.state == "GAME":
+            msg = data.decode().split()
+            if msg:
+                msg = list(map(int, msg))
+                msg.sort(reverse=True)
+            for room in roomlist:
+                if user in room:
+                    game = room[2]
+                    gamestate = game.get_state()
+                    if user == room[0]:
+                        player = "p1"
+                    else:
+                        player = "p2"
+                    hand = game.get_hand(player)
+                    if msg:
+                        invalidmsg = False
+                        for n in msg:
+                            if n > len(hand):
+                                send_msg(sock_cli, "\nJumlah kartu di tangan hanya " + str(len(hand)), msg)
+                                invalidmsg = True
+                                break
+                        if invalidmsg:
+                            break
+                    if gamestate == "MULLIGAN":
+                        if msg:
+                            game.mulligan(player, msg)
+                        msg = "\nHand anda menjadi:\n"
+                        for x in range(len(hand)):
+                            msg = msg + str(x+1) + ". " + hand[x].get_cardtype() + "\n"
+                        send_msg(sock_cli, msg, "INPUT_RECEIVED")
+                        break
         print(data)
     sock_cli.close()
     print("Connection closed", addr_cli)
