@@ -113,7 +113,19 @@ class Game:
         elif player == "p2":
             self.p2hand.append(Card("Wildcard"))
 
-    def play(self, player, index):
+    def get_played(self, player):
+        if player == "p1":
+            if self.p1played is None:
+                return None
+            else:
+                return self.p1played.get_cardtype()
+        elif player == "p2":
+            if self.p2played is None:
+                return None
+            else:
+                return self.p2played.get_cardtype()
+
+    def set_played(self, player, index):
         if player == "p1":
             if index is None:
                 self.p1played = None
@@ -155,6 +167,12 @@ class Game:
             elif self.p1played.get_cardtype() == "Kertas" and self.p2played.get_cardtype() == "Batu":
                 self.p1score += 1
                 return "p1"
+
+    def get_score(self, player):
+        if player == "p1":
+            return self.p1score
+        elif player == "p2":
+            return self.p2score
 
     def get_round(self):
         return self.round
@@ -357,7 +375,7 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                         invalidmsg = False
                         for n in msg:
                             if n > len(hand):
-                                send_msg(sock_cli, "\nJumlah kartu di tangan hanya " + str(len(hand)), "Invalid")
+                                send_msg(sock_cli, "\nJumlah kartu di tangan hanya " + str(len(hand)) + "\n", "Invalid")
                                 invalidmsg = True
                                 break
                         if invalidmsg:
@@ -394,9 +412,11 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                             send_msg(clients[p1][0], p1msg, "INPUT_RESET")
                             send_msg(clients[p2][0], p2msg, "INPUT_RESET")
                             game.set_state("WILDCARD")
+                            game.set_unready()
+                            break
                         else:
                             break
-                    if gamestate == "WILDCARD":
+                    elif gamestate == "WILDCARD":
                         if len(msg) == 2:
                             if hand[msg[0]-1].get_cardtype() == hand[msg[1]-1].get_cardtype():
                                 discarded = game.discard(player, msg)
@@ -419,6 +439,220 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                             send_msg(sock_cli, "\nBuang 2 kartu regular yang sama atau 1 wildcard\n", "Invalid")
                         else:
                             send_msg(sock_cli, "\nAnda tidak melakukan apa-apa pada fase wildcard\n", "INPUT_RECEIVED")
+                            game.set_ready(player)
+                        if game.is_ready():
+                            time.sleep(0.5)
+                            p1 = room[0]
+                            p2 = room[1]
+                            p1hand = game.get_hand("p1")
+                            p2hand = game.get_hand("p2")
+                            p1msg = "\nFase play\nHand anda:\n"
+                            p2msg = "\nFase play\nHand anda:\n"
+                            for x in range(len(p1hand)):
+                                p1msg = p1msg + str(x + 1) + ". " + p1hand[x].get_cardtype() + "\n"
+                            for x in range(len(p2hand)):
+                                p2msg = p2msg + str(x + 1) + ". " + p2hand[x].get_cardtype() + "\n"
+                            send_msg(clients[p1][0], p1msg, "INPUT_RESET")
+                            send_msg(clients[p2][0], p2msg, "INPUT_RESET")
+                            game.set_state("PLAY")
+                            game.set_unready()
+                            break
+                        else:
+                            break
+                    elif gamestate == "PLAY":
+                        if not msg:
+                            if not hand:
+                                game.set_played(player, None)
+                                send_msg(sock_cli, "\nAnda tidak memainkan kartu apapun\n", "INPUT_RECEIVED")
+                                game.set_ready(player)
+                            else:
+                                send_msg(sock_cli, "\nPilih sebuah kartu untuk dimainkan\n", "Invalid")
+                        elif len(msg) == 1:
+                            if hand[msg[0]-1].get_cardtype() == "Wildcard":
+                                send_msg(sock_cli, "\nMainkan wildcard sebagai:\n"
+                                                   "1. Batu\n"
+                                                   "2. Gunting\n"
+                                                   "3. Kertas\n", "Wildcard")
+                                user.state = "CHOOSING"
+                            else:
+                                played = game.set_played(player, msg[0]-1)
+                                send_msg(sock_cli, "\nAnda memainkan " + played + "\n", "INPUT_RECEIVED")
+                                game.set_ready(player)
+                                if game.is_ready():
+                                    time.sleep(0.5)
+                                    p1 = room[0]
+                                    p2 = room[1]
+                                    p1hand = game.get_hand("p1")
+                                    p2hand = game.get_hand("p2")
+                                    p1played = game.get_played("p1")
+                                    p2played = game.get_played("p2")
+                                    res = game.showdown()
+                                    p1score = game.get_score("p1")
+                                    p2score = game.get_score("p2")
+                                    game.advance_round()
+                                    gameround = game.get_round()
+                                    p1msg = "\nMusuh mengeluarkan " + p2played
+                                    p2msg = "\nMusuh mengeluarkan " + p1played
+                                    if res is None:
+                                        p1msg = p1msg + "\nRonde seri, skor tetap " + str(p1score) + "-" + str(p2score)
+                                        p2msg = p2msg + "\nRonde seri, skor tetap " + str(p1score) + "-" + str(p2score)
+                                    elif res == "p1":
+                                        p1msg = p1msg + "\nAnda menang, skor menjadi " + str(p1score) + "-" + str(
+                                            p2score)
+                                        p2msg = p2msg + "\nAnda kalah, skor menjadi " + str(p1score) + "-" + str(
+                                            p2score)
+                                    elif res == "p2":
+                                        p1msg = p1msg + "\nAnda kalah, skor menjadi " + str(p1score) + "-" + str(
+                                            p2score)
+                                        p2msg = p2msg + "\nAnda menang, skor menjadi " + str(p1score) + "-" + str(
+                                            p2score)
+                                    if p1score == 7:
+                                        p1msg = p1msg + "\nPermainan dimenangkan oleh anda"
+                                        p2msg = p2msg + "\nPermainan dimenangkan oleh musuh"
+                                        send_msg(clients[p1][0], p1msg, "GAME_FINISHED")
+                                        send_msg(clients[p2][0], p2msg, "GAME_FINISHED")
+                                        p1.state = "ROOM"
+                                        p2.state = "ROOM"
+                                        room.pop()
+                                        break
+                                    elif p2score == 7:
+                                        p1msg = p1msg + "\nPermainan dimenangkan oleh musuh"
+                                        p2msg = p2msg + "\nPermainan dimenangkan oleh anda"
+                                        send_msg(clients[p1][0], p1msg, "GAME_FINISHED")
+                                        send_msg(clients[p2][0], p2msg, "GAME_FINISHED")
+                                        p1.state = "ROOM"
+                                        p2.state = "ROOM"
+                                        room.pop()
+                                        break
+                                    p1draw = game.draw("p1")
+                                    if p1draw is None:
+                                        p1draw = Card("None")
+                                    p2draw = game.draw("p2")
+                                    if p2draw is None:
+                                        p2draw = Card("None")
+                                    p1msg = p1msg + ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                                     p1draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                                    p2msg = p2msg + ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                                     p2draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                                    for x in range(len(p1hand)):
+                                        p1msg = p1msg + str(x + 1) + ". " + p1hand[x].get_cardtype() + "\n"
+                                    for x in range(len(p2hand)):
+                                        p2msg = p2msg + str(x + 1) + ". " + p2hand[x].get_cardtype() + "\n"
+                                    send_msg(clients[p1][0], p1msg, "INPUT_RESET")
+                                    send_msg(clients[p2][0], p2msg, "INPUT_RESET")
+                                    game.set_state("WILDCARD")
+                                    user.state = "GAME"
+                                    game.set_unready()
+                                    break
+                        else:
+                            send_msg(sock_cli, "\nPilih sebuah kartu untuk dimainkan\n", "Invalid")
+        elif user.state == "CHOOSING":
+            msg = data.decode().split()
+            if not msg:
+                send_msg(sock_cli, "\nMainkan wildcard sebagai:\n"
+                                   "1. Batu\n"
+                                   "2. Gunting\n"
+                                   "3. Kertas\n", "Wildcard")
+                continue
+            msg = list(map(int, msg))
+            msg.sort(reverse=True)
+            for room in roomlist:
+                if user in room:
+                    game = room[2]
+                    player = None
+                    if user == room[0]:
+                        player = "p1"
+                    elif user == room[1]:
+                        player = "p2"
+                    hand = game.get_hand(player)
+                    if len(msg) == 1 and msg[0] < 4:
+                        index = None
+                        cardtype = None
+                        for x in range(len(hand)):
+                            print(x)
+                            if hand[x].get_cardtype() == "Wildcard":
+                                if msg[0] == 1:
+                                    cardtype = "Batu"
+                                    hand[x].set_cardtype("Batu")
+                                elif msg[0] == 2:
+                                    cardtype = "Gunting"
+                                    hand[x].set_cardtype("Gunting")
+                                else:
+                                    cardtype = "Kertas"
+                                    hand[x].set_cardtype("Kertas")
+                                index = x
+                                break
+                        game.set_played(player, index)
+                        send_msg(sock_cli, "\nAnda memainkan wildcard sebagai " + cardtype + "\n", "INPUT_RECEIVED")
+                        game.set_ready(player)
+                        if game.is_ready():
+                            time.sleep(0.5)
+                            p1 = room[0]
+                            p2 = room[1]
+                            p1hand = game.get_hand("p1")
+                            p2hand = game.get_hand("p2")
+                            p1played = game.get_played("p1")
+                            p2played = game.get_played("p2")
+                            res = game.showdown()
+                            p1score = game.get_score("p1")
+                            p2score = game.get_score("p2")
+                            game.advance_round()
+                            gameround = game.get_round()
+                            p1msg = "\nMusuh mengeluarkan " + p2played
+                            p2msg = "\nMusuh mengeluarkan " + p1played
+                            if res is None:
+                                p1msg = p1msg + "\nRonde seri, skor tetap " + str(p1score) + "-" + str(p2score)
+                                p2msg = p2msg + "\nRonde seri, skor tetap " + str(p1score) + "-" + str(p2score)
+                            elif res == "p1":
+                                p1msg = p1msg + "\nAnda menang, skor menjadi " + str(p1score) + "-" + str(p2score)
+                                p2msg = p2msg + "\nAnda kalah, skor menjadi " + str(p1score) + "-" + str(p2score)
+                            elif res == "p2":
+                                p1msg = p1msg + "\nAnda kalah, skor menjadi " + str(p1score) + "-" + str(p2score)
+                                p2msg = p2msg + "\nAnda menang, skor menjadi " + str(p1score) + "-" + str(p2score)
+                            if p1score == 7:
+                                p1msg = p1msg + "\nPermainan dimenangkan oleh anda"
+                                p2msg = p2msg + "\nPermainan dimenangkan oleh musuh"
+                                send_msg(clients[p1][0], p1msg, "GAME_FINISHED")
+                                send_msg(clients[p2][0], p2msg, "GAME_FINISHED")
+                                p1.state = "ROOM"
+                                p2.state = "ROOM"
+                                room.pop()
+                                break
+                            elif p2score == 7:
+                                p1msg = p1msg + "\nPermainan dimenangkan oleh musuh"
+                                p2msg = p2msg + "\nPermainan dimenangkan oleh anda"
+                                send_msg(clients[p1][0], p1msg, "GAME_FINISHED")
+                                send_msg(clients[p2][0], p2msg, "GAME_FINISHED")
+                                p1.state = "ROOM"
+                                p2.state = "ROOM"
+                                room.pop()
+                                break
+                            p1draw = game.draw("p1")
+                            if p1draw is None:
+                                p1draw = Card("None")
+                            p2draw = game.draw("p2")
+                            if p2draw is None:
+                                p2draw = Card("None")
+                            p1msg = p1msg + ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                             p1draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                            p2msg = p2msg + ("\nBabak " + str(gameround) + "\nDraw anda: " +
+                                             p2draw.get_cardtype() + "\nFase wildcard\nHand anda:\n")
+                            for x in range(len(p1hand)):
+                                p1msg = p1msg + str(x + 1) + ". " + p1hand[x].get_cardtype() + "\n"
+                            for x in range(len(p2hand)):
+                                p2msg = p2msg + str(x + 1) + ". " + p2hand[x].get_cardtype() + "\n"
+                            send_msg(clients[p1][0], p1msg, "INPUT_RESET")
+                            send_msg(clients[p2][0], p2msg, "INPUT_RESET")
+                            game.set_state("WILDCARD")
+                            p1.state = "GAME"
+                            p2.state = "GAME"
+                            game.set_unready()
+                            break
+                    else:
+                        send_msg(sock_cli, "\nMainkan wildcard sebagai:\n"
+                                           "1. Batu\n"
+                                           "2. Gunting\n"
+                                           "3. Kertas\n", "Wildcard")
         print(data)
     sock_cli.close()
     print("Connection closed", addr_cli)
@@ -451,13 +685,20 @@ roomlist = []
 while True:
     sock_cli, addr_cli = sock_server.accept()
     username_cli = sock_cli.recv(65535).decode("utf-8")
-    print(username_cli, "joined")
-    user = User(username_cli, "LOBBY", (0, 0, 0))
-    userlist.append(user)
+    for u in userlist:
+        if u.username == username_cli:
+            sock_cli.send(bytes("Username telah digunakan", "utf-8"))
+            sock_cli.close()
+            break
+    else:
+        sock_cli.send(bytes("Selamat datang, " + username_cli, "utf-8"))
+        print(username_cli, "joined")
+        user = User(username_cli, "LOBBY", (0, 0, 0))
+        userlist.append(user)
 
-    thread_cli = threading.Thread(target=read_msg, args=(clients, sock_cli, addr_cli, user, userlist))
-    thread_cli.start()
+        thread_cli = threading.Thread(target=read_msg, args=(clients, sock_cli, addr_cli, user, userlist))
+        thread_cli.start()
 
-    clients[user] = (sock_cli, addr_cli, thread_cli)
-    invitationlist[user] = []
-    friendlist[user] = []
+        clients[user] = (sock_cli, addr_cli, thread_cli)
+        invitationlist[user] = []
+        friendlist[user] = []

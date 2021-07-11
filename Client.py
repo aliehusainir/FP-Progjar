@@ -40,6 +40,10 @@ def read_msg(sock_cli):
         elif option == "INPUT_RESET":
             hasinput = False
             print(data)
+        elif option == "GAME_FINISHED":
+            userstate = "ROOM"
+            hasinput = False
+            print(data)
         else:
             print(data)
 
@@ -58,7 +62,10 @@ def check_input(string):
     if len(string) != len(set(string)):
         return False
     for n in string:
-        if not check_int(n):
+        try:
+            if int(n)-1 < 0:
+                return False
+        except ValueError:
             return False
     return True
 
@@ -66,6 +73,11 @@ def check_input(string):
 sock_cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock_cli.connect(("127.0.0.1", 50000))
 sock_cli.send(bytes(sys.argv[1], "utf-8"))
+response = sock_cli.recv(65535).decode()
+print(response)
+if response == "Username telah digunakan":
+    sock_cli.close()
+    exit()
 
 thread_cli = threading.Thread(target=read_msg, args=(sock_cli,))
 thread_cli.start()
