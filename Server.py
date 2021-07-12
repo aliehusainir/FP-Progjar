@@ -2,6 +2,7 @@ import socket
 import threading
 import random
 import time
+import os
 
 
 class User:
@@ -256,6 +257,27 @@ def read_msg(clients, sock_cli, addr_cli, user, userlist):
                     else:
                         send_msg(sock_cli, "User belum menjadi temanmu", msg[0])
                         break
+            elif msg[0] == "gambar":
+                file_path = cek_file(msg[2])
+                file_name = msg[2]
+                for u in userlist:
+                    if msg[1] in friendlist[user]:
+                        if msg[1] == u.username:
+                            while True:
+                                if file_path is None:
+                                    send_msg(sock_cli, "Gambar tidak ditemukan", "")
+                                    break
+                                send_msg(clients[u][0], file_name, msg[0])
+                                gambar = open(file_path, 'rb')
+                                while True:
+                                    img = gambar.read(1024)
+                                    if not img:
+                                        break
+                                    socket.send(img)
+                                gambar.close()
+                            break
+                    else:
+                        print("User belum menjadi temanmu")
         elif user.state == "DECKBUILDING":
             msg = data.decode("utf-8").split()
             user.decklist = (int(msg[0]), int(msg[1]), int(msg[2]))
@@ -671,6 +693,14 @@ def send_bcast(clients, data, sender_addr_cli, option):
 def send_msg(sock_cli, data, option):
     sock_cli.send(bytes("{}|{}".format(data, option), "utf-8"))
 
+def cek_file(nama_file):
+    #print(nama_file)
+    for root, dirs, files in os.walk('./gambar'):
+        for name in files:
+            if name == nama_file:
+                #print("ada")
+                return os.path.join(root, name)
+    return None
 
 sock_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 sock_server.bind(("0.0.0.0", 50000))

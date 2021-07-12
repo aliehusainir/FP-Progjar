@@ -13,7 +13,7 @@ def read_msg(sock_cli):
         if option == "gambar":
             gambar = open(data, 'wb')
             while True:
-                img = socket.recv(65535)
+                img = socket.recv(1024)
                 if not img:
                     break
                 gambar.write(img)
@@ -123,8 +123,8 @@ try:
                 msg = input("Masukkan pesan anda: ")
                 sock_cli.send(bytes("bcast|{}".format(msg), "utf-8"))
             elif option == "Kirim gambar":
-                dest = input("Masukkan username tujuan (ketikkan bcast untuk broadcast pesan): ")
-                msg = input("Masukkan lokasi gambar yang akan dikirim: ")
+                dest = input("Masukkan username tujuan: ")
+                msg = input("Masukkan nama gambar yang akan dikirim: ")
                 sock_cli.send(bytes("gambar|{}|{}".format(dest, msg), "utf-8"))
             elif option == "Buat room":
                 if hasdeck:
